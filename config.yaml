@@ -23,6 +23,9 @@ bot:
   wcf_remote_url: ""
   # Only respond in groups when @mentioned (commands are exempt)
   at_me_required: true
+  # Private chat whitelist: only these wxids (plus admin) can private chat with the bot
+  # Add wxids of trusted friends who need bot access via 1-on-1
+  private_whitelist: []
 
 group_filter:
   # Filter mode: "whitelist", "blacklist", or "all"

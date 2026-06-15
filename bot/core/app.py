@@ -19,6 +19,7 @@ from bot.group.cache import GroupCache
 from bot.group.filter import GroupFilter
 from bot.group.monitor import GroupMonitor
 from bot.admin.manager import AdminManager
+from bot.core.sender import ThreadSafeSender
 from bot.handlers.pipeline import HandlerPipeline
 from bot.handlers.registry import HandlerRegistry
 from bot.scheduler.manager import TaskScheduler
@@ -100,8 +101,12 @@ class ApplicationContext:
         group_cache = GroupCache(settings.monitor)
         self._services["group_cache"] = group_cache
 
-        # 8. Group Monitor
-        send_func = lambda msg, receiver: wcf_client.send_text(msg, receiver)  # noqa: E731
+        # 8. Thread-Safe Sender (wraps WCF client for concurrent send safety)
+        sender = ThreadSafeSender(wcf_client)
+        self._services["sender"] = sender
+
+        # 9. Group Monitor
+        send_func = lambda msg, receiver: sender.send_text(msg, receiver)  # noqa: E731
         group_monitor = GroupMonitor(
             settings=settings.monitor,
             db=repository,
@@ -128,7 +133,7 @@ class ApplicationContext:
             group_monitor=group_monitor,
             wcf_client=wcf_client,
             event_bus=event_bus,
-            send_msg_func=send_func,
+            sender=sender,
         )
         self._services["admin_manager"] = admin_manager
 
@@ -139,9 +144,13 @@ class ApplicationContext:
             group_monitor=group_monitor,
             admin_manager=admin_manager,
             bot_settings=settings.bot,
-            wcf_client=wcf_client,
+            sender=sender,
         ))
-        handler_registry.register(PrivateMessageHandler(admin_manager))
+        handler_registry.register(PrivateMessageHandler(
+            admin_manager=admin_manager,
+            bot_settings=settings.bot,
+            sender=sender,
+        ))
         handler_registry.register(SystemMessageHandler())
 
         # 11. WebHook Server

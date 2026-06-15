@@ -59,6 +59,7 @@ class BotSettings:
     wcf_mode: str = "local"
     wcf_remote_url: str = ""
     at_me_required: bool = True  # Bot only responds in groups when @mentioned
+    private_whitelist: List[str] = field(default_factory=list)  # wxids allowed to private chat
 
     def __post_init__(self) -> None:
         if self.wcf_mode not in ("local", "remote", "mock"):
@@ -69,6 +70,15 @@ class BotSettings:
             raise ConfigValidationError("bot.wcf_remote_url", f"must start with http:// or https://, got '{self.wcf_remote_url}'")
         if self.command_prefix and len(self.command_prefix) > 3:
             raise ConfigValidationError("bot.command_prefix", f"max length is 3, got {len(self.command_prefix)}")
+
+    def is_private_allowed(self, wxid: str) -> bool:
+        """Check if a wxid is allowed to private chat with the bot.
+
+        Admin is always allowed. Others must be in private_whitelist.
+        """
+        if self.admin_wxid and wxid == self.admin_wxid:
+            return True
+        return wxid in self.private_whitelist
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "BotSettings":
@@ -84,6 +94,9 @@ class BotSettings:
                     d[f.name] = _parse_int(env_val)
                 elif f.type == bool:
                     d[f.name] = _parse_bool(env_val)
+                elif f.type == "List[str]" or f.type == List[str]:
+                    # Comma-separated env var → list
+                    d[f.name] = [x.strip() for x in env_val.split(",") if x.strip()]
                 else:
                     d[f.name] = env_val
             elif f.name in data:

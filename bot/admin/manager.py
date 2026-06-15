@@ -13,6 +13,7 @@ from bot.admin.commands import CommandContext, CommandRegistry
 from bot.config.loader import ConfigLoader
 from bot.core.event_bus import EventBus, EventTypes
 from bot.core.exceptions import AdminAlreadyBoundError, AdminNotBoundError, AdminPermissionDeniedError
+from bot.core.sender import ThreadSafeSender
 from bot.db.repository import Repository
 from bot.group.filter import GroupFilter
 from bot.group.monitor import GroupMonitor
@@ -39,7 +40,7 @@ class AdminManager:
         group_monitor: GroupMonitor,
         wcf_client: WcfClient,
         event_bus: EventBus,
-        send_msg_func: Callable[..., int],
+        sender: ThreadSafeSender,
     ):
         self._config_loader = config_loader
         self._db = db
@@ -47,7 +48,7 @@ class AdminManager:
         self._group_monitor = group_monitor
         self._wcf = wcf_client
         self._event_bus = event_bus
-        self._send_msg = send_msg_func
+        self._sender = sender
 
         # Initialize command registry
         prefix = self._config_loader.settings.bot.command_prefix
@@ -152,12 +153,12 @@ class AdminManager:
         # For group messages, send response back to the group
         if room_id:
             if self.is_admin(sender_wxid):
-                # Admin: send directly to group
-                self._wcf.send_text(response, room_id)
+                # Admin: send directly to group (thread-safe)
+                self._sender.send_text(response, room_id)
             else:
-                # Non-admin: @mention the sender
+                # Non-admin: @mention the sender (thread-safe)
                 at_nickname = sender_name or sender_wxid
-                self._wcf.send_text(f"@{at_nickname} {response}", room_id, at_list=[sender_wxid])
+                self._sender.send_text(f"@{at_nickname} {response}", room_id, at_list=[sender_wxid])
             return None  # Already sent, don't double-send
 
         return response
@@ -259,5 +260,48 @@ class AdminManager:
                 return f"✅ 过滤模式已设为: {ctx.args.strip()}"
             except Exception as e:
                 return f"❌ {e}"
+
+        # ── Private Chat Whitelist Commands ────────────────────────
+
+        @registry.command("添加私聊白名单", description="添加用户到私聊白名单", usage="<wxid>")
+        def cmd_add_private_whitelist(ctx: CommandContext) -> str:
+            if not ctx.args:
+                return "❌ 用法: #添加私聊白名单 <wxid>"
+            wxid = ctx.args.strip()
+            settings = self._config_loader.settings.bot
+            if wxid in settings.private_whitelist:
+                return f"⚠️ {wxid} 已在私聊白名单中"
+            settings.private_whitelist.append(wxid)
+            self._config_loader.save()
+            return f"✅ 已将 {wxid} 添加到私聊白名单\n当前白名单: {', '.join(settings.private_whitelist)}"
+
+        @registry.command("移除私聊白名单", description="从私聊白名单移除用户", usage="<wxid>")
+        def cmd_remove_private_whitelist(ctx: CommandContext) -> str:
+            if not ctx.args:
+                return "❌ 用法: #移除私聊白名单 <wxid>"
+            wxid = ctx.args.strip()
+            settings = self._config_loader.settings.bot
+            if wxid not in settings.private_whitelist:
+                return f"⚠️ {wxid} 不在私聊白名单中"
+            settings.private_whitelist.remove(wxid)
+            self._config_loader.save()
+            return f"✅ 已将 {wxid} 从私聊白名单移除\n当前白名单: {', '.join(settings.private_whitelist) or '(空)'}"
+
+        @registry.command("私聊白名单", description="查看私聊白名单")
+        def cmd_list_private_whitelist(ctx: CommandContext) -> str:
+            settings = self._config_loader.settings.bot
+            wl = settings.private_whitelist
+            admin = settings.admin_wxid or "未绑定"
+            lines = [f"📋 私聊白名单", "=" * 20, f"管理员: {admin} (自动允许)"]
+            if wl:
+                for i, wxid in enumerate(wl, 1):
+                    name = ""
+                    contact = self._wcf.get_info_by_wxid(wxid)
+                    if contact:
+                        name = f" ({contact.name})"
+                    lines.append(f"  {i}. {wxid}{name}")
+            else:
+                lines.append("  (无其他白名单用户)")
+            return "\n".join(lines)
 
         logger.info("Registered %d admin commands", registry.count)

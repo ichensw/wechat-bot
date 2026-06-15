@@ -183,13 +183,16 @@ def _make_handler(at_me_required=True, admin_wxid="wxid_admin", command_prefix="
     user_info.wxid = "wxid_bot_abc"
     wcf_client.get_user_info.return_value = user_info
     wcf_client.is_connected.return_value = True
+    admin_manager._wcf = wcf_client
+
+    sender = MagicMock()
 
     handler = GroupMessageHandler(
         group_filter=group_filter,
         group_monitor=group_monitor,
         admin_manager=admin_manager,
         bot_settings=bot_settings,
-        wcf_client=wcf_client,
+        sender=sender,
     )
     return handler, group_filter, group_monitor, admin_manager, wcf_client
 
@@ -320,6 +323,157 @@ class TestGroupMessageHandlerAtMention:
             sender="wxid_user", room_id="test@chatroom",
         )
         assert handler.can_handle(msg) is False
+
+
+# ── PrivateMessageHandler + Private Whitelist Tests ───────────────────
+
+
+def _make_private_handler(admin_wxid="wxid_admin", private_whitelist=None):
+    """Create a PrivateMessageHandler with mocked dependencies."""
+    bot_settings = BotSettings(
+        admin_wxid=admin_wxid,
+        private_whitelist=private_whitelist or [],
+    )
+
+    admin_manager = MagicMock()
+    admin_manager.handle_command.return_value = "✅ OK"
+
+    sender = MagicMock()
+
+    handler = PrivateMessageHandler(
+        admin_manager=admin_manager,
+        bot_settings=bot_settings,
+        sender=sender,
+    )
+    return handler, admin_manager, sender
+
+
+class TestPrivateMessageHandler:
+    """Test PrivateMessageHandler access control."""
+
+    def test_admin_private_allowed(self):
+        """Admin's private messages are always allowed."""
+        handler, admin_mgr, sender = _make_private_handler(admin_wxid="wxid_admin")
+        msg = WxMessage(
+            msg_id="1", type=MessageType.TEXT, content="#帮助",
+            sender="wxid_admin", room_id="",
+        )
+        assert handler.can_handle(msg) is True
+        result = handler.handle(msg)
+        assert result.action == "handled"
+        admin_mgr.handle_command.assert_called_once()
+
+    def test_whitelist_user_allowed(self):
+        """Users in private_whitelist are allowed."""
+        handler, admin_mgr, sender = _make_private_handler(
+            private_whitelist=["wxid_friend_li", "wxid_friend_wang"],
+        )
+        msg = WxMessage(
+            msg_id="1", type=MessageType.TEXT, content="hello",
+            sender="wxid_friend_li", room_id="",
+        )
+        result = handler.handle(msg)
+        # Not a command, but authorized — returns continue
+        assert result.action != "rejected"
+
+    def test_unauthorized_user_rejected(self):
+        """Users NOT in whitelist and NOT admin are rejected."""
+        handler, admin_mgr, sender = _make_private_handler(admin_wxid="wxid_admin")
+        msg = WxMessage(
+            msg_id="1", type=MessageType.TEXT, content="hello",
+            sender="wxid_stranger", room_id="",
+        )
+        result = handler.handle(msg)
+        assert result.action == "rejected"
+
+    def test_empty_whitelist_rejects_non_admin(self):
+        """With empty whitelist, only admin can private chat."""
+        handler, admin_mgr, sender = _make_private_handler()
+        msg = WxMessage(
+            msg_id="1", type=MessageType.TEXT, content="hello",
+            sender="wxid_stranger", room_id="",
+        )
+        result = handler.handle(msg)
+        assert result.action == "rejected"
+
+    def test_no_admin_allows_whitelist_only(self):
+        """When no admin is bound, only whitelist users can private chat."""
+        handler, admin_mgr, sender = _make_private_handler(
+            admin_wxid=None, private_whitelist=["wxid_friend_li"],
+        )
+        # Whitelist user allowed
+        msg1 = WxMessage(
+            msg_id="1", type=MessageType.TEXT, content="hello",
+            sender="wxid_friend_li", room_id="",
+        )
+        result1 = handler.handle(msg1)
+        assert result1.action != "rejected"
+
+        # Non-whitelist rejected
+        msg2 = WxMessage(
+            msg_id="2", type=MessageType.TEXT, content="hello",
+            sender="wxid_stranger", room_id="",
+        )
+        result2 = handler.handle(msg2)
+        assert result2.action == "rejected"
+
+    def test_admin_command_response_sent_via_sender(self):
+        """Admin command response is sent through ThreadSafeSender."""
+        handler, admin_mgr, sender = _make_private_handler()
+        admin_mgr.handle_command.return_value = "✅ done"
+        msg = WxMessage(
+            msg_id="1", type=MessageType.TEXT, content="#帮助",
+            sender="wxid_admin", room_id="",
+        )
+        handler.handle(msg)
+        sender.send_text.assert_called_once_with("✅ done", "wxid_admin")
+
+    def test_whitelist_user_command_processed(self):
+        """Whitelist user's commands are processed."""
+        handler, admin_mgr, sender = _make_private_handler(
+            private_whitelist=["wxid_friend_li"],
+        )
+        admin_mgr.handle_command.return_value = "✅ done"
+        msg = WxMessage(
+            msg_id="1", type=MessageType.TEXT, content="#帮助",
+            sender="wxid_friend_li", room_id="",
+        )
+        result = handler.handle(msg)
+        assert result.action == "handled"
+        admin_mgr.handle_command.assert_called_once()
+
+
+# ── BotSettings is_private_allowed Tests ──────────────────────────────
+
+
+class TestIsPrivateAllowed:
+    """Test BotSettings.is_private_allowed method."""
+
+    def test_admin_always_allowed(self):
+        """Admin is always allowed."""
+        s = BotSettings(admin_wxid="wxid_admin")
+        assert s.is_private_allowed("wxid_admin") is True
+
+    def test_whitelist_user_allowed(self):
+        """Whitelist user is allowed."""
+        s = BotSettings(private_whitelist=["wxid_friend"])
+        assert s.is_private_allowed("wxid_friend") is True
+
+    def test_stranger_rejected(self):
+        """Stranger is not allowed."""
+        s = BotSettings(admin_wxid="wxid_admin", private_whitelist=["wxid_friend"])
+        assert s.is_private_allowed("wxid_stranger") is False
+
+    def test_no_admin_whitelist_only(self):
+        """When no admin, only whitelist users allowed."""
+        s = BotSettings(admin_wxid=None, private_whitelist=["wxid_friend"])
+        assert s.is_private_allowed("wxid_friend") is True
+        assert s.is_private_allowed("wxid_stranger") is False
+
+    def test_empty_whitelist_no_admin(self):
+        """Nobody allowed when no admin and empty whitelist."""
+        s = BotSettings(admin_wxid=None, private_whitelist=[])
+        assert s.is_private_allowed("wxid_anyone") is False
 
     def test_private_message_not_handled(self):
         """Private messages are not handled by GroupMessageHandler."""

@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from bot.group.monitor import GroupMonitor
     from bot.admin.manager import AdminManager
     from bot.config.settings import BotSettings
+    from bot.core.sender import ThreadSafeSender
     from bot.wcf.client import WcfClient
 
 logger = logging.getLogger("WeChatBot.GroupMsgHandler")
@@ -56,13 +57,13 @@ class GroupMessageHandler(BaseHandler):
         group_monitor: "GroupMonitor",
         admin_manager: "AdminManager",
         bot_settings: "BotSettings",
-        wcf_client: "WcfClient",
+        sender: "ThreadSafeSender",
     ):
         self._group_filter = group_filter
         self._group_monitor = group_monitor
         self._admin_manager = admin_manager
         self._bot_settings = bot_settings
-        self._wcf = wcf_client
+        self._sender = sender
 
     @property
     def name(self) -> str:
@@ -103,13 +104,15 @@ class GroupMessageHandler(BaseHandler):
                 room_id=msg.room_id,
             )
             if response:
-                # Private message flow: send response back
-                self._wcf.send_text(response, msg.room_id)
+                # AdminManager already sent to group when room_id was provided
+                # This branch handles the rare case where response is returned
+                self._sender.send_text(response, msg.room_id)
             return HandlerResult.handled(response="Command executed")
 
         # Step 4: @mention check (only respond when @'d, if at_me_required)
         if self._bot_settings.at_me_required:
-            bot_wxid = self._wcf.get_user_info().wxid if self._wcf.is_connected() else ""
+            # Get bot wxid from admin_manager's wcf client
+            bot_wxid = self._admin_manager._wcf.get_user_info().wxid if self._admin_manager._wcf.is_connected() else ""
             if not msg.is_at(bot_wxid):
                 return HandlerResult.continue_()
 
@@ -118,14 +121,22 @@ class GroupMessageHandler(BaseHandler):
 
 
 class PrivateMessageHandler(BaseHandler):
-    """Handle private (1-on-1) messages - mainly for admin commands.
+    """Handle private (1-on-1) messages - only for admin and private_whitelist.
 
-    Priority: HIGH (runs early to catch admin commands).
+    Priority: HIGH (runs early to filter unauthorized private messages).
+
+    Access control:
+      - Admin (admin_wxid): always allowed, commands processed
+      - private_whitelist: allowed, commands processed
+      - Everyone else: message is REJECTED (bot ignores)
+
     Private messages never require @mention.
     """
 
-    def __init__(self, admin_manager: "AdminManager"):
+    def __init__(self, admin_manager: "AdminManager", bot_settings: "BotSettings", sender: "ThreadSafeSender"):
         self._admin_manager = admin_manager
+        self._bot_settings = bot_settings
+        self._sender = sender
 
     @property
     def name(self) -> str:
@@ -140,10 +151,21 @@ class PrivateMessageHandler(BaseHandler):
         return msg.is_private and msg.is_text
 
     def handle(self, msg: WxMessage) -> HandlerResult:
-        """Process admin commands from private messages."""
+        """Process private message with access control."""
+        # Step 1: Access control — only admin + private_whitelist
+        if not self._bot_settings.is_private_allowed(msg.sender):
+            logger.debug("Private message from unauthorized wxid: %s", msg.sender)
+            return HandlerResult.rejected(f"Private chat not allowed for {msg.sender}")
+
+        # Step 2: Try as admin command
         response = self._admin_manager.handle_command(msg.sender, msg.content)
         if response:
+            # Send response back to the user (thread-safe)
+            self._sender.send_text(response, msg.sender)
             return HandlerResult.handled(response=response)
+
+        # Step 3: Not a command, but authorized user — continue pipeline
+        # (future: AI chat response, etc.)
         return HandlerResult.continue_()
 
 
