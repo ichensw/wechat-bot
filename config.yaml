@@ -1,0 +1,79 @@
+# WeChat Bot Configuration
+# ========================
+# All settings can be overridden via environment variables:
+#   BOT_ADMIN_WXID, BOT_COMMAND_PREFIX,
+#   GROUP_FILTER_MODE, GROUP_FILTER_WHITELIST, GROUP_FILTER_BLACKLIST,
+#   MONITOR_MEMBER_COUNT, MONITOR_MEMBER_COUNT_INTERVAL,
+#   MONITOR_MESSAGE, MONITOR_ALERT_MEMBER_CHANGE, MONITOR_MEMBER_CHANGE_THRESHOLD,
+#   WEBHOOK_ENABLED, WEBHOOK_HOST, WEBHOOK_PORT, WEBHOOK_TOKEN,
+#   DATABASE_PATH,
+#   LOG_LEVEL, LOG_FILE, LOG_MAX_SIZE_MB, LOG_BACKUP_COUNT
+# Or use WCF_MODE (local/remote) and WCF_REMOTE_URL for remote mode.
+
+bot:
+  name: "WeChatBot"
+  # Admin wxid - set to null initially; admin binds via "#绑定管理员"
+  admin_wxid: null
+  # Command prefix for admin commands
+  command_prefix: "#"
+  # WCF connection mode: "local" (direct wcferry), "remote" (HTTP API), or "mock" (debug)
+  wcf_mode: "mock"
+  # Remote WCF HTTP server URL (used when wcf_mode is "remote")
+  # Example: "http://192.168.1.100:10080"
+  wcf_remote_url: ""
+
+group_filter:
+  # Filter mode: "whitelist", "blacklist", or "all"
+  mode: "whitelist"
+  # Whitelist group roomids (used when mode is "whitelist")
+  whitelist: []
+  # Blacklist group roomids (used when mode is "blacklist")
+  blacklist: []
+
+monitor:
+  # Enable group member count monitoring
+  member_count: true
+  # Interval (seconds) for checking member count changes
+  member_count_interval: 300
+  # Enable group message monitoring and storage
+  message: true
+  # Message types to store (empty = all types)
+  # Common: 1=text, 3=image, 34=voice, 43=video, 47=emoji, 49=file/link
+  message_types: []
+  # Alert admin when member count changes
+  alert_member_change: true
+  # Member count change threshold for alerting
+  member_change_threshold: 5
+  # Group cache refresh interval (seconds)
+  group_cache_ttl: 600
+
+webhook:
+  enabled: true
+  host: "0.0.0.0"
+  port: 8080
+  # ⚠️ MUST change this to a secure random string before deployment
+  # For mock/debug mode, any string works
+  token: "dev-token-for-debug"
+  # Rate limit: max requests per minute per IP
+  rate_limit: 60
+  # CORS allowed origins (empty = no CORS headers)
+  cors_origins: []
+
+database:
+  path: "data/wechat_bot.db"
+  # WAL mode for concurrent read/write
+  wal_mode: true
+  # Busy timeout in milliseconds
+  busy_timeout: 5000
+  # Batch insert buffer size (messages buffered before flush)
+  batch_size: 100
+  # Batch flush interval (seconds)
+  batch_flush_interval: 10
+
+logging:
+  level: "INFO"
+  file: "data/wechat_bot.log"
+  max_size_mb: 10
+  backup_count: 5
+  # Structured log format
+  format: "%(asctime)s [%(name)s] %(levelname)s: %(message)s"
