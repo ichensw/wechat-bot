@@ -78,32 +78,6 @@ class TestWxMessageAtMention:
         assert msg.at_wxids == ["wxid_bot_abc"]
         assert msg.is_at("wxid_bot_abc") is True
 
-    def test_from_http_msg_with_atuserlist(self):
-        """from_http_msg parses at_wxids from HTTP response."""
-        data = {
-            "id": "200",
-            "type": 1,
-            "content": "hello",
-            "sender": "wxid_user",
-            "roomid": "test@chatroom",
-            "xml": '<msg><atuserlist>wxid_bot_xyz</atuserlist></msg>',
-        }
-        msg = WxMessage.from_http_msg(data)
-        assert msg.at_wxids == ["wxid_bot_xyz"]
-
-    def test_from_http_msg_explicit_at_wxids(self):
-        """from_http_msg supports explicit at_wxids field."""
-        data = {
-            "id": "201",
-            "type": 1,
-            "content": "hello",
-            "sender": "wxid_user",
-            "roomid": "test@chatroom",
-            "at_wxids": ["wxid_bot_explicit"],
-        }
-        msg = WxMessage.from_http_msg(data)
-        assert msg.at_wxids == ["wxid_bot_explicit"]
-
     def test_to_dict_includes_at_wxids(self):
         """to_dict includes at_wxids."""
         msg = WxMessage(

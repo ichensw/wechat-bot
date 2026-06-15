@@ -15,7 +15,7 @@ class TestGroupFilter:
         wl = whitelist if whitelist is not None else ["test123@chatroom"]
         bl = blacklist or []
         config_data = {
-            "bot": {"name": "Test", "wcf_mode": "local"},
+            "bot": {"name": "Test"},
             "group_filter": {"mode": mode, "whitelist": wl, "blacklist": bl},
             "monitor": {"member_count_interval": 300, "group_cache_ttl": 600},
             "webhook": {"enabled": False, "token": "x" * 32},

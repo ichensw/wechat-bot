@@ -56,18 +56,10 @@ class BotSettings:
     name: str = "WeChatBot"
     admin_wxid: Optional[str] = None
     command_prefix: str = "#"
-    wcf_mode: str = "local"
-    wcf_remote_url: str = ""
     at_me_required: bool = True  # Bot only responds in groups when @mentioned
     private_whitelist: List[str] = field(default_factory=list)  # wxids allowed to private chat
 
     def __post_init__(self) -> None:
-        if self.wcf_mode not in ("local", "remote", "mock"):
-            raise ConfigValidationError("bot.wcf_mode", f"must be 'local', 'remote', or 'mock', got '{self.wcf_mode}'")
-        if self.wcf_mode == "remote" and not self.wcf_remote_url:
-            raise ConfigValidationError("bot.wcf_remote_url", "required when wcf_mode is 'remote'")
-        if self.wcf_mode == "remote" and not self.wcf_remote_url.startswith(("http://", "https://")):
-            raise ConfigValidationError("bot.wcf_remote_url", f"must start with http:// or https://, got '{self.wcf_remote_url}'")
         if self.command_prefix and len(self.command_prefix) > 3:
             raise ConfigValidationError("bot.command_prefix", f"max length is 3, got {len(self.command_prefix)}")
 

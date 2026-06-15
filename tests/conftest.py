@@ -26,8 +26,6 @@ def sample_config_data():
             "name": "TestBot",
             "admin_wxid": None,
             "command_prefix": "#",
-            "wcf_mode": "local",
-            "wcf_remote_url": "",
         },
         "group_filter": {
             "mode": "whitelist",

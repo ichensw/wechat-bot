@@ -50,7 +50,7 @@ class MessageType(IntEnum):
 class WxMessage:
     """Structured WeChat message model.
 
-    This is a normalized representation that works across local and remote WCF clients.
+    This is a normalized representation of WeChatFerry messages.
     """
 
     msg_id: str
@@ -168,33 +168,6 @@ class WxMessage:
             at_wxids=at_wxids,
         )
 
-    @classmethod
-    def from_http_msg(cls, data: Dict[str, Any]) -> "WxMessage":
-        """Create from HTTP API response dict."""
-        content = data.get("content", "")
-        xml = data.get("xml", "")
-        at_wxids = cls.parse_at_wxids(content, xml)
-        # Also support explicit at_wxids from HTTP response
-        explicit_at = data.get("at_wxids", data.get("atuserlist", ""))
-        if explicit_at and isinstance(explicit_at, str) and not at_wxids:
-            for wxid in explicit_at.split("|"):
-                wxid = wxid.strip()
-                if wxid and wxid not in at_wxids:
-                    at_wxids.append(wxid)
-        elif isinstance(explicit_at, list) and not at_wxids:
-            at_wxids = explicit_at
-        return cls(
-            msg_id=str(data.get("id", "")),
-            type=data.get("type", 0),
-            content=content,
-            sender=data.get("sender", ""),
-            room_id=data.get("roomid", ""),
-            xml=xml,
-            thumb=data.get("thumb", ""),
-            extra=data.get("extra", ""),
-            at_wxids=at_wxids,
-        )
-
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to dict for storage/API."""
         return {
@@ -240,16 +213,6 @@ class Contact:
             alias=data.get("alias", ""),
             type=data.get("type", 0),
             remark=data.get("remark", ""),
-        )
-
-    @classmethod
-    def from_http_contact(cls, data: Dict[str, Any]) -> "Contact":
-        """Create from HTTP API response dict."""
-        return cls(
-            wxid=data.get("wxid", data.get("Wxid", "")),
-            name=data.get("name", data.get("Name", "")),
-            alias=data.get("alias", data.get("Alias", "")),
-            type=data.get("type", 0),
         )
 
 

@@ -1,6 +1,6 @@
 # WeChatBot v2.0
 
-基于 [WeChatFerry](https://github.com/lich0821/WeChatFerry) 的生产级微信监控机器人，支持 CLI 部署到 Linux 服务器。
+基于 [WeChatFerry](https://github.com/lich0821/WeChatFerry) 的生产级微信监控机器人，仅支持 Windows 系统。
 
 ## ✨ 功能
 
@@ -12,24 +12,26 @@
 | 🪝 **WebHook API** | HTTP API 支持向指定群发消息、给管理员发消息、查询群聊数据 |
 | 🔄 **热更新配置** | 修改 config.yaml 后自动生效，无需重启 |
 | 🏗️ **可扩展架构** | Handler Pipeline + Event Bus + Command Registry，新增功能只需添加 Handler |
+| 🔒 **私聊白名单** | 只有管理员和私聊白名单用户可与机器人私聊 |
+| 📢 **@机器人触发** | 群内只有 @机器人 才会回复（命令免@） |
+| 🔁 **并发安全** | ThreadSafeSender 保证消息发送线程安全 + 限流 |
 
 ## 📁 项目架构
 
 ```
 wechat-bot/
 ├── main.py                    # CLI 入口
+├── start.bat                  # Windows 一键启动脚本
 ├── config.yaml                # 配置文件
 ├── requirements.txt           # Python 依赖
 ├── pyproject.toml             # 项目元数据 & 工具配置
-├── Dockerfile                 # Docker 部署
-├── docker-compose.yaml        # Docker Compose
-├── Makefile                   # 构建命令
 │
 ├── bot/
 │   ├── __init__.py            # 版本号
 │   ├── core/                  # 核心层
 │   │   ├── exceptions.py      # 异常层级（15个异常类型）
 │   │   ├── event_bus.py       # 事件总线（发布/订阅/前缀匹配/异步）
+│   │   ├── sender.py          # ThreadSafeSender（并发安全 + 限流）
 │   │   ├── app.py             # 应用上下文（DI 容器）
 │   │   └── bot.py             # 机器人主类（状态机 + 生命周期）
 │   │
@@ -39,7 +41,7 @@ wechat-bot/
 │   │
 │   ├── wcf/                   # WCF 抽象层
 │   │   ├── models.py          # 数据模型（WxMessage, Contact, GroupInfo）
-│   │   └── client.py          # 客户端抽象（Local + Remote，支持 Linux 部署）
+│   │   └── client.py          # LocalWcfClient（wcferry 直连）
 │   │
 │   ├── handlers/              # 处理器层
 │   │   ├── base.py            # BaseHandler ABC + HandlerPriority + HandlerResult
@@ -79,22 +81,20 @@ wechat-bot/
 │   ├── test_models.py         # 数据模型测试
 │   ├── test_commands.py       # 命令注册表测试
 │   ├── test_event_bus.py      # 事件总线测试
-│   └── test_group_filter.py   # 群过滤测试
+│   ├── test_group_filter.py   # 群过滤测试
+│   └── test_at_mention.py     # @提及 + 私聊白名单测试
 │
-└── deploy/                    # 部署配置
-    ├── install_service.sh     # systemd 服务安装脚本
-    └── supervisord.conf       # Supervisor 配置
+└── docs/
+    └── windows-deployment.md # Windows 完整部署教程
 ```
 
 ## 🚀 快速开始
 
 ### 环境要求
 
+- **Windows 10/11**
 - **Python 3.9 ~ 3.11**（3.12+ 暂不支持）
 - **微信 3.9.12.51**（与 wcferry v39.5.2 配套）
-- Windows 10/11（本地模式）
-- 或 Linux 服务器 + wcfhttp 远程服务（远程模式）
-- 或 Mac / Linux 开发调试（Mock 模式，无需微信）
 
 ### 安装
 
@@ -109,7 +109,7 @@ pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 python main.py --init
 
 # 编辑配置（⚠️ 务必修改 webhook.token）
-vim config.yaml
+notepad config.yaml
 ```
 
 ### 启动
@@ -122,61 +122,9 @@ python main.py --check
 python main.py
 
 # 使用自定义配置
-python main.py -c /path/to/config.yaml
+python main.py -c C:\wechat-bot\config.yaml
 
-# Windows 用户可直接双击 start.bat
-```
-
-### 🧪 Mac / Linux 本地调试（Mock 模式）
-
-无需微信客户端，在 Mac/Linux 上完整调试机器人逻辑：
-
-```bash
-# 方式 1: 环境变量
-BOT_WCF_MODE=mock python main.py
-
-# 方式 2: 修改 config.yaml
-# 将 wcf_mode 改为 "mock"
-vim config.yaml  # bot.wcf_mode: "mock"
-python main.py
-```
-
-Mock 模式功能：
-- ✅ 3 个模拟群聊（测试群A/B/C）+ 3 个模拟好友
-- ✅ 自动生成群聊消息（每 10 秒）
-- ✅ **交互式终端输入**（直接在终端模拟发消息）
-- ✅ 管理员命令测试（`#帮助`、`#绑定管理员` 等）
-- ✅ WebHook API 完整可用
-- ✅ 数据库消息存储和查询
-- ✅ Handler Pipeline 完整执行
-
-终端交互格式：
-```
-🔧 MockInput> #帮助                              → 管理员私聊命令
-🔧 MockInput> g:test_group_a@chatroom 你好       → 群聊消息（来自管理员）
-🔧 MockInput> s:wxid_friend_li #帮助              → 模拟李四私聊
-🔧 MockInput> sg:test_group_a@chatroom wxid_friend_li 大家好  → 指定群+指定人
-```
-
-### Docker 部署
-
-```bash
-# 构建
-docker build -t wechat-bot .
-
-# 启动
-docker compose up -d
-
-# 查看日志
-docker compose logs -f wechat-bot
-```
-
-### systemd 服务
-
-```bash
-sudo bash deploy/install_service.sh
-sudo systemctl start wechat-bot
-sudo journalctl -u wechat-bot -f
+# 或直接双击 start.bat 一键启动
 ```
 
 ## ⚙️ 配置说明
@@ -186,8 +134,8 @@ bot:
   name: "WeChatBot"
   admin_wxid: null              # 管理员 wxid，通过 #绑定管理员 命令绑定
   command_prefix: "#"           # 命令前缀
-  wcf_mode: "local"             # local (Windows直连) / remote (HTTP远程)
-  wcf_remote_url: ""            # 远程模式下的 wcfhttp 服务地址
+  at_me_required: true          # 群内是否需要@才回复（命令免@）
+  private_whitelist: []          # 私聊白名单 wxid 列表
 
 group_filter:
   mode: "whitelist"             # whitelist / blacklist / all
@@ -244,6 +192,9 @@ logging:
 | `#添加黑名单` | 添加群到黑名单 | `<群ID>` |
 | `#移除黑名单` | 从黑名单移除群 | `<群ID>` |
 | `#过滤模式` | 设置过滤模式 | `whitelist/blacklist/all` |
+| `#添加私聊白名单` | 添加私聊白名单 | `<wxid>` |
+| `#移除私聊白名单` | 移除私聊白名单 | `<wxid>` |
+| `#私聊白名单` | 查看私聊白名单 | 无 |
 
 ## 🪝 WebHook API
 
@@ -292,17 +243,7 @@ curl -H "Authorization: Bearer your-token" \
 4. **Repository Pattern** — 数据访问层与业务逻辑分离
 5. **DI Container** — ApplicationContext 统一管理组件初始化和依赖注入
 6. **State Machine** — 机器人状态管理（UNINITIALIZED→INITIALIZING→RUNNING→DEGRADED→STOPPING→STOPPED）
-
-### Linux 部署方案
-
-```
-┌─────────────────┐         HTTP          ┌─────────────────┐
-│  Linux Server   │ ◄──────────────────► │  Windows PC      │
-│  (Bot Process)  │    wcfhttp API        │  (WeChat+wcf)    │
-│                 │                       │                  │
-│  RemoteWcfClient│                       │  wcfhttp daemon  │
-└─────────────────┘                       └─────────────────┘
-```
+7. **ThreadSafeSender** — 并发安全消息发送（Lock + 限流）
 
 ## 🧪 测试
 
@@ -321,7 +262,7 @@ make lint
 
 | 文档 | 说明 |
 |------|------|
-| [QUICKSTART.md](QUICKSTART.md) | 快速启动（3种模式） |
+| [QUICKSTART.md](QUICKSTART.md) | 快速启动指南 |
 | [docs/windows-deployment.md](docs/windows-deployment.md) | Windows 完整部署教程 |
 | [WeChatFerry 文档](https://wechatferry.readthedocs.io/) | WeChatFerry Python SDK 文档 |
 | [WeChatFerry 仓库](https://github.com/lich0821/WeChatFerry) | WeChatFerry 官方仓库 |

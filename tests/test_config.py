@@ -20,37 +20,30 @@ class TestBotSettings:
         settings = BotSettings()
         assert settings.name == "WeChatBot"
         assert settings.admin_wxid is None
-        assert settings.wcf_mode == "local"
-
-    def test_valid_remote_mode(self):
-        settings = BotSettings(wcf_mode="remote", wcf_remote_url="http://192.168.1.100:8080")
-        assert settings.wcf_mode == "remote"
-
-    def test_valid_mock_mode(self):
-        settings = BotSettings(wcf_mode="mock")
-        assert settings.wcf_mode == "mock"
-
-    def test_invalid_wcf_mode(self):
-        with pytest.raises(ConfigValidationError, match="wcf_mode"):
-            BotSettings(wcf_mode="invalid")
-
-    def test_remote_without_url(self):
-        with pytest.raises(ConfigValidationError, match="wcf_remote_url"):
-            BotSettings(wcf_mode="remote")
-
-    def test_remote_invalid_url(self):
-        with pytest.raises(ConfigValidationError, match="http"):
-            BotSettings(wcf_mode="remote", wcf_remote_url="ftp://invalid")
+        assert settings.at_me_required is True
 
     def test_command_prefix_too_long(self):
         with pytest.raises(ConfigValidationError, match="command_prefix"):
             BotSettings(command_prefix="toolongprefix")
 
     def test_from_dict(self):
-        data = {"name": "MyBot", "wcf_mode": "local", "command_prefix": "!"}
+        data = {"name": "MyBot", "command_prefix": "!"}
         settings = BotSettings.from_dict(data)
         assert settings.name == "MyBot"
         assert settings.command_prefix == "!"
+
+    def test_private_whitelist(self):
+        settings = BotSettings(private_whitelist=["wxid_a", "wxid_b"])
+        assert settings.is_private_allowed("wxid_a")
+        assert not settings.is_private_allowed("wxid_c")
+
+    def test_at_me_required_default(self):
+        settings = BotSettings()
+        assert settings.at_me_required is True
+
+    def test_at_me_required_false(self):
+        settings = BotSettings(at_me_required=False)
+        assert settings.at_me_required is False
 
 
 class TestGroupFilterSettings:

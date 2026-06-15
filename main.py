@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """WeChat Bot v2.0 - A production-grade WeChatFerry-based monitoring bot.
 
+Runs exclusively on Windows with WeChat 3.9.12.51 installed.
+
 Usage:
   python main.py                          Start with default config
   python main.py -c /path/to/config.yaml  Start with custom config
@@ -9,8 +11,6 @@ Usage:
   python main.py --version                Show version
 
 Environment Variables:
-  BOT_WCF_MODE          local or remote (default: local)
-  BOT_WCF_REMOTE_URL    Remote WCF HTTP server URL (for remote mode)
   WEBHOOK_TOKEN         WebHook API authentication token
   LOG_LEVEL             Logging level (DEBUG/INFO/WARNING/ERROR)
 """
@@ -27,12 +27,12 @@ from bot import __version__
 def main() -> None:
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description="WeChatBot v2.0 - WeChatFerry-based monitoring bot",
+        description="WeChatBot v2.0 - WeChatFerry-based monitoring bot (Windows only)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   python main.py                            Start the bot
-  python main.py -c /etc/wxbot/config.yaml  Custom config
+  python main.py -c my_config.yaml          Custom config
   python main.py --check                    Check WeChat login
   python main.py --init                     Create default config
 
@@ -109,20 +109,15 @@ def _check_login(config_path: str) -> None:
 
         from bot.wcf.client import create_wcf_client
 
-        client = create_wcf_client(settings.bot)
+        client = create_wcf_client()
         client.connect()
 
         if client.is_login():
             info = client.get_user_info()
             print("✅ WeChat is logged in!")
-            print(f"   wxid:  {info.wxid}")
-            print(f"   name:  {info.name}")
+            print(f"   wxid:   {info.wxid}")
+            print(f"   name:   {info.name}")
             print(f"   mobile: {info.mobile}")
-            mode = settings.bot.wcf_mode
-            if mode == "remote":
-                print(f"   mode:  remote ({settings.bot.wcf_remote_url})")
-            else:
-                print(f"   mode:  local (direct wcferry)")
         else:
             print("❌ WeChat is NOT logged in. Please login first.")
 
@@ -130,7 +125,6 @@ def _check_login(config_path: str) -> None:
     except Exception as e:
         print(f"❌ Failed to check login: {e}")
         print("   Make sure WeChat is running and wcferry is installed.")
-        print("   For remote mode, ensure the WCF HTTP server is reachable.")
         sys.exit(1)
 
 

@@ -1,22 +1,17 @@
-"""WeChatFerry client abstraction with local and remote modes.
+"""WeChatFerry client — Windows local mode only.
 
-- LocalWcfClient: Direct wcferry connection (requires Windows + WeChat running)
-- RemoteWcfClient: HTTP API connection to a remote wcfhttp server (Linux compatible)
-
-Both implement the same WcfClient protocol, allowing transparent mode switching.
+This project runs exclusively on Windows with WeChat installed.
+The LocalWcfClient connects to a running WeChat instance via the wcferry SDK.
 """
 
 from __future__ import annotations
 
 import logging
-import time
 from abc import ABC, abstractmethod
-from queue import Empty, Queue
-from threading import Event, Thread
+from queue import Empty
 from typing import Any, Dict, List, Optional
 
-from bot.config.settings import BotSettings
-from bot.core.exceptions import WcfConnectionError, WcfNotLoggedInError, WcfSendError
+from bot.core.exceptions import WcfConnectionError, WcfSendError
 from bot.wcf.models import Contact, GroupInfo, UserInfo, WxMessage
 
 logger = logging.getLogger("WeChatBot.Wcf")
@@ -25,8 +20,8 @@ logger = logging.getLogger("WeChatBot.Wcf")
 class WcfClient(ABC):
     """Abstract WeChatFerry client interface.
 
-    All methods that interact with WeChat go through this interface,
-    enabling transparent switching between local and remote modes.
+    All methods that interact with WeChat go through this interface.
+    Currently only LocalWcfClient is supported (Windows only).
     """
 
     # ── Connection Lifecycle ──────────────────────────────────────────
@@ -140,7 +135,7 @@ class LocalWcfClient(WcfClient):
     """Direct WeChatFerry connection (Windows only).
 
     Connects to a running WeChat instance via the wcferry SDK.
-    Requires WeChat to be running on the same Windows machine.
+    Requires WeChat 3.9.12.51 to be running on the same Windows machine.
     """
 
     def __init__(self) -> None:
@@ -318,234 +313,11 @@ class LocalWcfClient(WcfClient):
         return self._wcf.query_sql(db, sql)
 
 
-class RemoteWcfClient(WcfClient):
-    """Remote WeChatFerry HTTP API client (Linux compatible).
-
-    Connects to a wcfhttp server running on a Windows machine.
-    This enables deploying the bot on Linux while the WeChat client runs elsewhere.
-
-    The wcfhttp server can be started with:
-      - wcfrust (Rust): https://github.com/lich0821/wcf-client-rust
-      - go_wcf_http (Go): https://github.com/lzb112/WeChatFerryX/clients/go_wcf_http
-
-    Default API base URL: http://<host>:<port>
-    """
-
-    def __init__(self, base_url: str, timeout: float = 10.0) -> None:
-        self._base_url = base_url.rstrip("/")
-        self._timeout = timeout
-        self._connected = False
-        self._msg_queue: Queue[WxMessage] = Queue(maxsize=10000)
-        self._receiving = False
-        self._poll_thread: Optional[Thread] = None
-        self._stop_event = Event()
-
-    def _request(self, method: str, path: str, json_data: Optional[Dict] = None, params: Optional[Dict] = None) -> Any:
-        """Make an HTTP request to the wcfhttp server."""
-        import requests
-
-        url = f"{self._base_url}{path}"
-        try:
-            resp = requests.request(method, url, json=json_data, params=params, timeout=self._timeout)
-            resp.raise_for_status()
-            return resp.json() if resp.content else None
-        except requests.RequestException as e:
-            raise WcfConnectionError(f"HTTP request failed: {method} {url} - {e}")
-
-    def connect(self) -> None:
-        """Verify connectivity to the remote wcfhttp server."""
-        try:
-            result = self._request("GET", "/api/islogin")
-            self._connected = True
-            logger.info("RemoteWcfClient: Connected to %s", self._base_url)
-        except Exception as e:
-            raise WcfConnectionError(f"Cannot connect to remote WCF server at {self._base_url}: {e}")
-
-    def disconnect(self) -> None:
-        """Stop polling and cleanup."""
-        self._receiving = False
-        self._stop_event.set()
-        if self._poll_thread:
-            self._poll_thread.join(timeout=5.0)
-            self._poll_thread = None
-        self._connected = False
-
-    def is_connected(self) -> bool:
-        """Check if the remote server is reachable."""
-        if not self._connected:
-            return False
-        try:
-            self._request("GET", "/api/islogin")
-            return True
-        except Exception:
-            return False
-
-    def is_login(self) -> bool:
-        """Check if WeChat is logged in on the remote server."""
-        try:
-            result = self._request("GET", "/api/islogin")
-            return bool(result)
-        except Exception:
-            return False
-
-    def get_user_info(self) -> UserInfo:
-        """Get logged-in user info."""
-        data = self._request("GET", "/api/user_info")
-        return UserInfo.from_dict(data or {})
-
-    def get_qrcode(self) -> str:
-        """Get login QR code."""
-        result = self._request("GET", "/api/qrcode")
-        return str(result) if result else ""
-
-    def enable_receiving_msg(self) -> bool:
-        """Start polling messages from the remote server."""
-        self._receiving = True
-        self._stop_event.clear()
-        self._poll_thread = Thread(target=self._poll_messages, name="RemoteWcfPollThread", daemon=True)
-        self._poll_thread.start()
-        logger.info("RemoteWcfClient: Started message polling")
-        return True
-
-    def disable_receiving_msg(self) -> bool:
-        """Stop polling messages."""
-        self._receiving = False
-        self._stop_event.set()
-        if self._poll_thread:
-            self._poll_thread.join(timeout=5.0)
-            self._poll_thread = None
-        return True
-
-    def is_receiving_msg(self) -> bool:
-        """Check if message polling is active."""
-        return self._receiving
-
-    def get_msg(self, timeout: float = 1.0) -> Optional[WxMessage]:
-        """Get next message from the local queue."""
-        try:
-            return self._msg_queue.get(timeout=timeout)
-        except Empty:
-            return None
-
-    def _poll_messages(self) -> None:
-        """Background thread that polls the remote WCF server for messages."""
-        import requests
-
-        url = f"{self._base_url}/api/msg"
-        while not self._stop_event.is_set():
-            try:
-                resp = requests.get(url, timeout=5.0)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    if data:
-                        # The HTTP API may return a list of messages
-                        messages = data if isinstance(data, list) else [data]
-                        for msg_data in messages:
-                            try:
-                                msg = WxMessage.from_http_msg(msg_data)
-                                self._msg_queue.put_nowait(msg)
-                            except Exception as e:
-                                logger.error("Failed to parse remote message: %s", e)
-            except requests.RequestException:
-                pass  # Will retry on next poll
-            except Exception as e:
-                logger.error("Error polling remote messages: %s", e)
-
-            self._stop_event.wait(timeout=0.5)
-
-    def send_text(self, msg: str, receiver: str, at_list: Optional[List[str]] = None) -> int:
-        """Send a text message via the remote API."""
-        payload = {"msg": msg, "receiver": receiver}
-        if at_list:
-            payload["aters"] = at_list
-        try:
-            result = self._request("POST", "/api/send_text", json_data=payload)
-            return 0 if result else -1
-        except Exception as e:
-            raise WcfSendError(receiver, str(e))
-
-    def send_image(self, path: str, receiver: str) -> int:
-        """Send an image message via the remote API."""
-        payload = {"path": path, "receiver": receiver}
-        try:
-            result = self._request("POST", "/api/send_image", json_data=payload)
-            return 0 if result else -1
-        except Exception as e:
-            raise WcfSendError(receiver, str(e))
-
-    def send_file(self, path: str, receiver: str) -> int:
-        """Send a file message via the remote API."""
-        payload = {"path": path, "receiver": receiver}
-        try:
-            result = self._request("POST", "/api/send_file", json_data=payload)
-            return 0 if result else -1
-        except Exception as e:
-            raise WcfSendError(receiver, str(e))
-
-    def get_contacts(self) -> List[Contact]:
-        """Get all contacts from the remote server."""
-        data = self._request("GET", "/api/contacts")
-        if isinstance(data, list):
-            return [Contact.from_http_contact(c) for c in data]
-        return []
-
-    def get_friends(self) -> List[Contact]:
-        """Get friends from the remote server."""
-        data = self._request("GET", "/api/friends")
-        if isinstance(data, list):
-            return [Contact.from_http_contact(c) for c in data]
-        return []
-
-    def get_info_by_wxid(self, wxid: str) -> Optional[Contact]:
-        """Get contact info by wxid."""
-        try:
-            data = self._request("GET", f"/api/info_by_wxid", params={"wxid": wxid})
-            return Contact.from_http_contact(data) if data else None
-        except Exception:
-            return None
-
-    def get_chatroom_members(self, room_id: str) -> Dict[str, str]:
-        """Get group members from the remote server."""
-        try:
-            data = self._request("GET", "/api/chatroom_members", params={"roomid": room_id})
-            return data if isinstance(data, dict) else {}
-        except Exception:
-            return {}
-
-    def get_chatroom_info(self, room_id: str) -> Optional[GroupInfo]:
-        """Get group info from the remote server."""
-        contact = self.get_info_by_wxid(room_id)
-        if contact:
-            info = GroupInfo.from_contact(contact)
-            members = self.get_chatroom_members(room_id)
-            info.member_count = len(members)
-            info.members = members
-            return info
-        return None
-
-    def query_sql(self, db: str, sql: str) -> List[Dict[str, Any]]:
-        """Execute SQL on the remote WeChat database."""
-        payload = {"db": db, "sql": sql}
-        result = self._request("POST", "/api/query_sql", json_data=payload)
-        return result if isinstance(result, list) else []
-
-
-def create_wcf_client(bot_settings: BotSettings) -> WcfClient:
-    """Factory function to create the appropriate WCF client.
-
-    Args:
-        bot_settings: Bot settings with wcf_mode and wcf_remote_url.
+def create_wcf_client() -> WcfClient:
+    """Create a LocalWcfClient instance.
 
     Returns:
-        A WcfClient instance (LocalWcfClient, RemoteWcfClient, or MockWcfClient).
+        A LocalWcfClient connected to the local WeChat instance.
     """
-    if bot_settings.wcf_mode == "mock":
-        from bot.wcf.mock_client import MockWcfClient
-        logger.info("Using MOCK WCF client (development/debug mode)")
-        return MockWcfClient(auto_message_interval=10.0, interactive=True)
-    elif bot_settings.wcf_mode == "remote":
-        logger.info("Using remote WCF client: %s", bot_settings.wcf_remote_url)
-        return RemoteWcfClient(base_url=bot_settings.wcf_remote_url)
-    else:
-        logger.info("Using local WCF client (wcferry)")
-        return LocalWcfClient()
+    logger.info("Using local WCF client (wcferry on Windows)")
+    return LocalWcfClient()

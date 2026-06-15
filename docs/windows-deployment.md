@@ -232,8 +232,8 @@ bot:
   name: "WeChatBot"
   admin_wxid: null              # 先留空，启动后通过 #绑定管理员 命令绑定
   command_prefix: "#"           # 管理员命令前缀，可自定义（如 "!" "/"）
-  wcf_mode: "local"             # ★ Windows 本地模式，必须为 local
-  wcf_remote_url: ""            # 本地模式留空
+  at_me_required: true           # 群内@机器人触发回复（命令免@）
+  private_whitelist: []          # 私聊白名单
 
 group_filter:
   mode: "all"                   # ★ 初始建议设为 all，监控所有群

@@ -78,8 +78,7 @@ if not exist "config.yaml" (
     echo.
     echo [重要] 请先编辑 config.yaml 修改以下配置后再启动：
     echo   1. webhook.token  - 修改为随机字符串（必须！）
-    echo   2. wcf_mode       - 确认为 "local"（Windows 本地模式）
-    echo   3. group_filter.mode - 可先设为 "all" 监控所有群
+    echo   2. group_filter.mode - 可先设为 "all" 监控所有群
     echo.
     notepad config.yaml
     echo.

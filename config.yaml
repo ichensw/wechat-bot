@@ -8,7 +8,6 @@
 #   WEBHOOK_ENABLED, WEBHOOK_HOST, WEBHOOK_PORT, WEBHOOK_TOKEN,
 #   DATABASE_PATH,
 #   LOG_LEVEL, LOG_FILE, LOG_MAX_SIZE_MB, LOG_BACKUP_COUNT
-# Or use WCF_MODE (local/remote) and WCF_REMOTE_URL for remote mode.
 
 bot:
   name: "WeChatBot"
@@ -16,11 +15,6 @@ bot:
   admin_wxid: null
   # Command prefix for admin commands
   command_prefix: "#"
-  # WCF connection mode: "local" (direct wcferry), "remote" (HTTP API), or "mock" (debug)
-  wcf_mode: "mock"
-  # Remote WCF HTTP server URL (used when wcf_mode is "remote")
-  # Example: "http://192.168.1.100:10080"
-  wcf_remote_url: ""
   # Only respond in groups when @mentioned (commands are exempt)
   at_me_required: true
   # Private chat whitelist: only these wxids (plus admin) can private chat with the bot
@@ -57,7 +51,6 @@ webhook:
   host: "0.0.0.0"
   port: 8080
   # ⚠️ MUST change this to a secure random string before deployment
-  # For mock/debug mode, any string works
   token: "dev-token-for-debug"
   # Rate limit: max requests per minute per IP
   rate_limit: 60

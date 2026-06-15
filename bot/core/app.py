@@ -81,8 +81,8 @@ class ApplicationContext:
         self._services["db_manager"] = db_manager
         self._services["db"] = repository
 
-        # 5. WCF Client
-        wcf_client = create_wcf_client(settings.bot)
+        # 5. WCF Client (Windows local only)
+        wcf_client = create_wcf_client()
         wcf_client.connect()
         self._services["wcf"] = wcf_client
 
