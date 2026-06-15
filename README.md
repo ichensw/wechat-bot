@@ -1,6 +1,6 @@
 # WeChatBot v2.0
 
-基于 [WeChatFerry](https://github.com/nicepkg/WeChatFerry) 的生产级微信监控机器人，支持 CLI 部署到 Linux 服务器。
+基于 [WeChatFerry](https://github.com/lich0821/WeChatFerry) 的生产级微信监控机器人，支持 CLI 部署到 Linux 服务器。
 
 ## ✨ 功能
 
@@ -90,24 +90,25 @@ wechat-bot/
 
 ### 环境要求
 
-- Python 3.9+
-- Windows 机器运行微信 + WeChatFerry (本地模式)
-- 或 Linux 机器 + wcfhttp 远程服务 (远程模式)
-- **macOS / Linux 也可开发调试 (Mock 模式，无需微信)**
+- **Python 3.9 ~ 3.11**（3.12+ 暂不支持）
+- **微信 3.9.12.51**（与 wcferry v39.5.2 配套）
+- Windows 10/11（本地模式）
+- 或 Linux 服务器 + wcfhttp 远程服务（远程模式）
+- 或 Mac / Linux 开发调试（Mock 模式，无需微信）
 
 ### 安装
 
 ```bash
 # 克隆项目
-git clone <repo-url> && cd wechat-bot
+git clone https://github.com/ichensw/wechat-bot.git && cd wechat-bot
 
-# 安装依赖
-pip install -r requirements.txt
+# 安装依赖（使用国内镜像加速）
+pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 # 生成默认配置
 python main.py --init
 
-# 编辑配置
+# 编辑配置（⚠️ 务必修改 webhook.token）
 vim config.yaml
 ```
 
@@ -122,6 +123,8 @@ python main.py
 
 # 使用自定义配置
 python main.py -c /path/to/config.yaml
+
+# Windows 用户可直接双击 start.bat
 ```
 
 ### 🧪 Mac / Linux 本地调试（Mock 模式）
@@ -313,6 +316,15 @@ make test-cov
 # 代码检查
 make lint
 ```
+
+## 📚 文档
+
+| 文档 | 说明 |
+|------|------|
+| [QUICKSTART.md](QUICKSTART.md) | 快速启动（3种模式） |
+| [docs/windows-deployment.md](docs/windows-deployment.md) | Windows 完整部署教程 |
+| [WeChatFerry 文档](https://wechatferry.readthedocs.io/) | WeChatFerry Python SDK 文档 |
+| [WeChatFerry 仓库](https://github.com/lich0821/WeChatFerry) | WeChatFerry 官方仓库 |
 
 ## 📄 License
 
