@@ -62,6 +62,7 @@ class WxMessage:
     xml: str = ""
     thumb: str = ""
     extra: str = ""
+    at_wxids: List[str] = field(default_factory=list)  # wxids that were @mentioned in this message
     timestamp: float = field(default_factory=time.time)
 
     @property
@@ -89,32 +90,109 @@ class WxMessage:
         """Get human-readable message type name."""
         return MessageType.name_of(self.type)
 
+    def is_at(self, wxid: str) -> bool:
+        """Check if a specific wxid was @mentioned in this message.
+
+        Args:
+            wxid: The wxid to check (typically the bot's own wxid).
+
+        Returns:
+            True if the wxid is in the at_wxids list.
+        """
+        return wxid in self.at_wxids
+
+    @property
+    def has_at(self) -> bool:
+        """Check if this message contains any @mention."""
+        return len(self.at_wxids) > 0
+
+    @staticmethod
+    def parse_at_wxids(content: str, xml: str = "") -> List[str]:
+        """Parse @mentioned wxids from message content and XML.
+
+        WeChatFerry group text messages have content format:
+            sender_wxid:\n@Nickname1 @Nickname2 actual message
+
+        The XML may contain <atuserlist> with pipe-separated wxids:
+            <atuserlist>wxid1|wxid2</atuserlist>
+
+        Args:
+            content: Raw message content.
+            xml: Message XML content.
+
+        Returns:
+            List of wxids that were @mentioned.
+        """
+        wxids: List[str] = []
+
+        # Method 1: Parse from XML <atuserlist>
+        if xml:
+            import re
+            match = re.search(r"<atuserlist>([^<]+)</atuserlist>", xml)
+            if match:
+                at_list = match.group(1)
+                for wxid in at_list.split("|"):
+                    wxid = wxid.strip()
+                    if wxid and wxid.startswith("wxid_"):
+                        wxids.append(wxid)
+
+        # Method 2: Parse from content (fallback)
+        # In group messages, content format is: "sender_wxid:\nactual content"
+        # The actual content may contain @Nickname patterns
+        # This is a less reliable fallback when XML doesn't have at info
+        if not wxids and content:
+            actual_content = content
+            # Strip the sender prefix for group messages
+            if ":\n" in content:
+                _, _, actual_content = content.partition(":\n")
+            # Look for @ mentions in content (nickname-based, less reliable)
+            # We don't extract wxids from nicknames, so this is informational only
+
+        return wxids
+
     @classmethod
     def from_wcf_msg(cls, msg: Any) -> "WxMessage":
         """Create from a wcferry WxMsg object."""
+        content = msg.content or ""
+        xml = getattr(msg, "xml", "") or ""
+        at_wxids = cls.parse_at_wxids(content, xml)
         return cls(
             msg_id=str(msg.id),
             type=msg.type,
-            content=msg.content or "",
+            content=content,
             sender=msg.sender or "",
             room_id=msg.roomid or "",
-            xml=getattr(msg, "xml", "") or "",
+            xml=xml,
             thumb=getattr(msg, "thumb", "") or "",
             extra=getattr(msg, "extra", "") or "",
+            at_wxids=at_wxids,
         )
 
     @classmethod
     def from_http_msg(cls, data: Dict[str, Any]) -> "WxMessage":
         """Create from HTTP API response dict."""
+        content = data.get("content", "")
+        xml = data.get("xml", "")
+        at_wxids = cls.parse_at_wxids(content, xml)
+        # Also support explicit at_wxids from HTTP response
+        explicit_at = data.get("at_wxids", data.get("atuserlist", ""))
+        if explicit_at and isinstance(explicit_at, str) and not at_wxids:
+            for wxid in explicit_at.split("|"):
+                wxid = wxid.strip()
+                if wxid and wxid not in at_wxids:
+                    at_wxids.append(wxid)
+        elif isinstance(explicit_at, list) and not at_wxids:
+            at_wxids = explicit_at
         return cls(
             msg_id=str(data.get("id", "")),
             type=data.get("type", 0),
-            content=data.get("content", ""),
+            content=content,
             sender=data.get("sender", ""),
             room_id=data.get("roomid", ""),
-            xml=data.get("xml", ""),
+            xml=xml,
             thumb=data.get("thumb", ""),
             extra=data.get("extra", ""),
+            at_wxids=at_wxids,
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -128,6 +206,7 @@ class WxMessage:
             "sender_name": self.sender_name,
             "room_id": self.room_id,
             "xml": self.xml,
+            "at_wxids": self.at_wxids,
             "timestamp": self.timestamp,
         }
 

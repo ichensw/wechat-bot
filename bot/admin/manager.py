@@ -39,7 +39,7 @@ class AdminManager:
         group_monitor: GroupMonitor,
         wcf_client: WcfClient,
         event_bus: EventBus,
-        send_msg_func: Callable[[str, str], int],
+        send_msg_func: Callable[..., int],
     ):
         self._config_loader = config_loader
         self._db = db
@@ -109,15 +109,18 @@ class AdminManager:
         logger.info("Admin unbound by %s", wxid)
         return True, "✅ 管理员已解绑"
 
-    def handle_command(self, sender_wxid: str, content: str) -> Optional[str]:
+    def handle_command(self, sender_wxid: str, content: str, room_id: str = "") -> Optional[str]:
         """Handle a potential admin command from a message.
 
         Args:
             sender_wxid: The wxid of the message sender.
             content: The raw message content.
+            room_id: The room_id if this is a group message (empty for private).
 
         Returns:
             Response string if a command was executed, None if not a command.
+            When room_id is provided, the response is sent directly to the group
+            (with @mention for non-admin), and None is returned to avoid double-sending.
         """
         # Build context
         sender_name = ""
@@ -129,6 +132,8 @@ class AdminManager:
             sender_wxid=sender_wxid,
             sender_name=sender_name,
             raw_content=content,
+            command_name="",
+            args="",
             is_admin=self.is_admin(sender_wxid),
             services={
                 "admin_manager": self,
@@ -140,7 +145,22 @@ class AdminManager:
             },
         )
 
-        return self._registry.execute(content, ctx)
+        response = self._registry.execute(content, ctx)
+        if not response:
+            return None
+
+        # For group messages, send response back to the group
+        if room_id:
+            if self.is_admin(sender_wxid):
+                # Admin: send directly to group
+                self._wcf.send_text(response, room_id)
+            else:
+                # Non-admin: @mention the sender
+                at_nickname = sender_name or sender_wxid
+                self._wcf.send_text(f"@{at_nickname} {response}", room_id, at_list=[sender_wxid])
+            return None  # Already sent, don't double-send
+
+        return response
 
     def _register_default_commands(self) -> None:
         """Register all built-in admin commands."""

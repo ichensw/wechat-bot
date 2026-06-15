@@ -134,7 +134,13 @@ class ApplicationContext:
 
         # Register handlers now that all dependencies are available
         from bot.handlers.group_message import GroupMessageHandler, PrivateMessageHandler, SystemMessageHandler
-        handler_registry.register(GroupMessageHandler(group_filter, group_monitor))
+        handler_registry.register(GroupMessageHandler(
+            group_filter=group_filter,
+            group_monitor=group_monitor,
+            admin_manager=admin_manager,
+            bot_settings=settings.bot,
+            wcf_client=wcf_client,
+        ))
         handler_registry.register(PrivateMessageHandler(admin_manager))
         handler_registry.register(SystemMessageHandler())
 

@@ -58,6 +58,7 @@ class BotSettings:
     command_prefix: str = "#"
     wcf_mode: str = "local"
     wcf_remote_url: str = ""
+    at_me_required: bool = True  # Bot only responds in groups when @mentioned
 
     def __post_init__(self) -> None:
         if self.wcf_mode not in ("local", "remote", "mock"):

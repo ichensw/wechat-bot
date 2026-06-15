@@ -273,6 +273,7 @@ class MockWcfClient(WcfClient):
         sender: str = "wxid_friend_li",
         room_id: str = "",
         msg_type: int = 1,
+        at_wxids: Optional[List[str]] = None,
     ) -> WxMessage:
         """Inject a message into the mock queue.
 
@@ -283,6 +284,7 @@ class MockWcfClient(WcfClient):
             sender: Sender wxid.
             room_id: Room ID (empty for private message).
             msg_type: Message type (1=text, 3=image, etc.).
+            at_wxids: List of wxids that were @mentioned.
 
         Returns:
             The created WxMessage.
@@ -293,6 +295,12 @@ class MockWcfClient(WcfClient):
         if contact:
             sender_name = contact.name
 
+        # Generate XML with atuserlist if at_wxids provided
+        xml = ""
+        if at_wxids:
+            at_list_str = "|".join(at_wxids)
+            xml = f'<msg><atuserlist>{at_list_str}</atuserlist></msg>'
+
         msg = WxMessage(
             msg_id=f"mock_{self._msg_counter}",
             type=msg_type,
@@ -300,13 +308,14 @@ class MockWcfClient(WcfClient):
             sender=sender,
             room_id=room_id,
             sender_name=sender_name,
-            xml="",
+            xml=xml,
             thumb="",
             extra="",
+            at_wxids=at_wxids or [],
             timestamp=time.time(),
         )
         self._msg_queue.put(msg)
-        logger.debug("Injected mock message: %s -> %s", sender, content[:50])
+        logger.debug("Injected mock message: %s -> %s (at=%s)", sender, content[:50], at_wxids)
         return msg
 
     # ── Background Threads ───────────────────────────────────────────
@@ -326,7 +335,11 @@ class MockWcfClient(WcfClient):
                 ]
                 chosen = random.choice(variations)
 
-                self.inject_message(content=chosen, sender=sender, room_id=room_id)
+                # Occasionally add @bot for testing at_me_required
+                at_bot = random.random() < 0.15  # 15% chance
+                at_wxids = ["wxid_mock_bot"] if at_bot else None
+
+                self.inject_message(content=chosen, sender=sender, room_id=room_id, at_wxids=at_wxids)
             except Exception as e:
                 logger.error("Auto-message error: %s", e)
 
@@ -346,16 +359,18 @@ class MockWcfClient(WcfClient):
         print("  🧪 MockWcfClient - 交互式调试模式")
         print("=" * 60)
         print("  输入格式:")
-        print("    <文本>                私聊消息(来自管理员)")
-        print("    g:<群ID> <文本>      群聊消息(来自管理员)")
-        print("    s:<wxid> <文本>      私聊消息(来自指定用户)")
-        print("    sg:<群ID> <wxid> <文本>  群聊消息(来自指定用户)")
-        print("    quit                  退出")
+        print("    <文本>                     私聊消息(来自管理员)")
+        print("    g:<群ID> <文本>            群聊消息(来自管理员)")
+        print("    s:<wxid> <文本>            私聊消息(来自指定用户)")
+        print("    sg:<群ID> <wxid> <文本>    群聊消息(来自指定用户)")
+        print("    @:<群ID> <wxid> <文本>     群聊@机器人消息")
+        print("    quit                       退出")
         print("-" * 60)
         print("  示例:")
-        print("    #帮助                     → 发送命令")
-        print("    g:test_group_a@chatroom 你好  → 在测试群A发消息")
-        print("    s:wxid_friend_li #帮助    → 模拟李四私聊发命令")
+        print("    #帮助                          → 发送命令")
+        print("    g:test_group_a@chatroom 你好   → 在测试群A发消息")
+        print("    s:wxid_friend_li #帮助         → 模拟李四私聊发命令")
+        print("    @:test_group_a@chatroom wxid_friend_li 你好  → 李四在群A@机器人")
         print("=" * 60 + "\n")
 
         while not self._stop_event.is_set():
@@ -371,7 +386,17 @@ class MockWcfClient(WcfClient):
                 break
 
             # Parse input format
-            if line.startswith("sg:"):
+            if line.startswith("@:"):
+                # @:<room_id> <wxid> <text> — group message @mentioning the bot
+                parts = line[2:].split(maxsplit=2)
+                if len(parts) >= 3:
+                    self.inject_message(
+                        content=parts[2], sender=parts[1], room_id=parts[0],
+                        at_wxids=["wxid_mock_bot"],
+                    )
+                else:
+                    print("  ⚠️ 格式: @:<群ID> <wxid> <文本>")
+            elif line.startswith("sg:"):
                 # sg:<room_id> <wxid> <text>
                 parts = line[3:].split(maxsplit=2)
                 if len(parts) >= 3:
